@@ -369,10 +369,36 @@ function App() {
 
   return (
     <main className="app-shell">
+      <header className="topbar">
+        <div className="topbar-brand">
+          <p className="eyebrow">Storage Frontend</p>
+          <nav className="topbar-nav" aria-label="Hlavni navigace">
+            <button type="button" className="topbar-tab is-active">
+              Soubory
+            </button>
+          </nav>
+        </div>
+
+        <form className="topbar-user" onSubmit={handleUserSubmit}>
+          <label className="topbar-user-field">
+            <span>User:</span>
+            <input
+              type="text"
+              value={draftUserId}
+              onChange={(event) => setDraftUserId(event.target.value)}
+              placeholder="alice"
+            />
+          </label>
+          <button type="submit" className="secondary-button">
+            Pouzit
+          </button>
+        </form>
+      </header>
+
       <section className="hero-panel">
         <div>
-          <p className="eyebrow">Storage Frontend</p>
-          <h1>Bucket dashboard pro upload, billing a spravu objektu.</h1>
+          <p className="eyebrow">Soubory</p>
+          <h1>Sprava souboru, bucketu a billing metrik na jednom miste.</h1>
           <p className="hero-copy">
             Frontend bezi ve <code>src/web</code> a mluvi s aktualni FastAPI aplikaci pres Vite
             proxy. Uz umi pracovat s buckety, soft delete a billing metrikami nad novym backendem.
@@ -401,28 +427,6 @@ function App() {
 
       <section className="workspace">
         <aside className="sidebar">
-          <div className="panel">
-            <div className="panel-heading">
-              <h2>Uzivatel</h2>
-              <p>Zmena vlastnika, pod kterym se pracuje s bucketu a objekty.</p>
-            </div>
-
-            <form className="stack" onSubmit={handleUserSubmit}>
-              <label className="field">
-                <span>User ID</span>
-                <input
-                  type="text"
-                  value={draftUserId}
-                  onChange={(event) => setDraftUserId(event.target.value)}
-                  placeholder="alice"
-                />
-              </label>
-              <button type="submit" className="primary-button">
-                Pouzit usera
-              </button>
-            </form>
-          </div>
-
           <div className="panel">
             <div className="panel-heading">
               <h2>Novy bucket</h2>

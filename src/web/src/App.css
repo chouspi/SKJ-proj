@@ -5,6 +5,81 @@
   padding: 2rem;
 }
 
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(18px);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.topbar-tab {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  font: inherit;
+  font-weight: 700;
+  color: var(--muted);
+  background: transparent;
+}
+
+.topbar-tab.is-active {
+  color: #f8fafc;
+  background: linear-gradient(135deg, #1d4ed8, #2563eb);
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.24);
+}
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.topbar-user-field {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.topbar-user-field span {
+  white-space: nowrap;
+}
+
+.topbar-user-field input {
+  width: min(14rem, 40vw);
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.topbar-user-field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .hero-panel {
   display: flex;
   justify-content: space-between;
@@ -438,9 +513,25 @@ tbody tr:last-child td {
 }
 
 @media (max-width: 1080px) {
+  .topbar,
+  .topbar-brand,
+  .topbar-user,
   .hero-panel,
   .workspace {
     flex-direction: column;
+  }
+
+  .topbar {
+    align-items: stretch;
+  }
+
+  .topbar-brand,
+  .topbar-user {
+    align-items: flex-start;
+  }
+
+  .topbar-user {
+    margin-left: 0;
   }
 
   .sidebar {
@@ -464,10 +555,27 @@ tbody tr:last-child td {
     padding: 1rem;
   }
 
+  .topbar,
   .hero-panel,
   .panel {
     padding: 1rem;
     border-radius: 20px;
+  }
+
+  .topbar-user {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .topbar-user-field {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+  }
+
+  .topbar-user-field input {
+    width: 100%;
   }
 
   .toolbar {
