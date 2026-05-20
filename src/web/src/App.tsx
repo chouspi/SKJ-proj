@@ -62,6 +62,7 @@ async function readErrorMessage(response: Response) {
 }
 
 function App() {
+  const [activeSection, setActiveSection] = useState<'files'>('files')
   const [draftUserId, setDraftUserId] = useState(DEFAULT_USER_ID)
   const [activeUserId, setActiveUserId] = useState(DEFAULT_USER_ID)
   const [draftBucketName, setDraftBucketName] = useState('')
@@ -373,7 +374,15 @@ function App() {
         <div className="topbar-brand">
           <p className="eyebrow">Storage Frontend</p>
           <nav className="topbar-nav" aria-label="Hlavni navigace">
-            <button type="button" className="topbar-tab is-active">
+            <button
+              type="button"
+              className={`topbar-tab${activeSection === 'files' ? ' is-active' : ''}`}
+              aria-current={activeSection === 'files' ? 'page' : undefined}
+              onClick={() => {
+                setActiveSection('files')
+                void handleRefresh()
+              }}
+            >
               Soubory
             </button>
           </nav>
@@ -425,7 +434,8 @@ function App() {
         </div>
       </section>
 
-      <section className="workspace">
+      {activeSection === 'files' ? (
+        <section className="workspace">
         <aside className="sidebar">
           <div className="panel">
             <div className="panel-heading">
@@ -730,7 +740,8 @@ function App() {
             )}
           </div>
         </section>
-      </section>
+        </section>
+      ) : null}
     </main>
   )
 }
