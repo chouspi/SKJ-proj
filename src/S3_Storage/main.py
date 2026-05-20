@@ -522,6 +522,14 @@ async def update_object_location(
 
 
 @app.post(
+    "/upload",
+    response_model=FileUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Upload file",
+    response_description="Metadata of the accepted file upload.",
+    include_in_schema=False,
+)
+@app.post(
     "/files/upload",
     response_model=FileUploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
@@ -616,6 +624,12 @@ async def list_files(
 
 
 @app.get(
+    "/download/{file_id}",
+    summary="Download object",
+    response_description="Binary object content.",
+    include_in_schema=False,
+)
+@app.get(
     "/objects/{file_id}",
     summary="Download object",
     response_description="Binary object content.",
@@ -675,6 +689,13 @@ async def download_file(
     )
 
 
+@app.delete(
+    "/download/{file_id}",
+    response_model=DeleteFileResponse,
+    summary="Soft delete object",
+    response_description="Deletion confirmation.",
+    include_in_schema=False,
+)
 @app.delete(
     "/objects/{file_id}",
     response_model=DeleteFileResponse,
