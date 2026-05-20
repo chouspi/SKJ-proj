@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class HealthResponse(BaseModel):
@@ -57,14 +57,62 @@ class UserContext(BaseModel):
     )
 
 
+class TransferContext(BaseModel):
+    is_internal: bool = Field(False, description="Whether the transfer is internal to the cloud.")
+
+
 class FilePathInput(BaseModel):
     file_id: UUID = Field(..., description="Unique identifier of the stored file.")
 
 
+class BucketPathInput(BaseModel):
+    bucket_id: int = Field(..., ge=1, description="Numeric identifier of the bucket.")
+
+
+class BucketCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255, description="Globally unique bucket name.")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Bucket name must not be empty.")
+        return cleaned
+
+
+class BucketSummary(BaseModel):
+    id: int
+    user_id: str
+    name: str
+    created_at: datetime
+    bandwidth_bytes: int = Field(..., ge=0)
+    current_storage_bytes: int = Field(..., ge=0)
+    ingress_bytes: int = Field(..., ge=0)
+    egress_bytes: int = Field(..., ge=0)
+    internal_transfer_bytes: int = Field(..., ge=0)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BucketBillingResponse(BucketSummary):
+    pass
+
+
+class FileListQuery(BaseModel):
+    include_deleted: bool = Field(False, description="Include soft-deleted objects in the result.")
+
+
+class UploadTargetInput(BaseModel):
+    bucket_id: int | None = Field(None, ge=1, description="Target bucket identifier.")
+
+
 class FileSummary(BaseModel):
     id: UUID
+    bucket_id: int = Field(..., ge=1)
     filename: str = Field(..., min_length=1, max_length=255)
     size: int = Field(..., ge=0)
+    is_deleted: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

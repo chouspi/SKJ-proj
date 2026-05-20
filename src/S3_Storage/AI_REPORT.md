@@ -2,29 +2,31 @@
 
 ## Použité AI nástroje
 
-- Codex / GPT-5 jako párový programátor pro návrh a úpravu FastAPI aplikace.
+- Codex / GPT-5 jako párový programátor pro návrh Alembicu, relací a úprav FastAPI aplikace.
 
 ## Příklady promptů
 
-- "Předělej ukládání metadat ze souboru JSON na SQLite přes SQLAlchemy."
-- "Doplň Pydantic modely pro vstupy a výstupy endpointů."
-- "Zachovej možnost spouštět aplikaci jak z `src/S3_Storage`, tak z kořene projektu."
+- "Zaveď Alembic do existující FastAPI + SQLAlchemy aplikace se SQLite databází."
+- "Navrhni tři samostatné migrace: buckets, billing, soft delete."
+- "Jak bezpečně backfillnout existující objekty do nového bucket schématu bez ztráty dat?"
 
 ## Co AI vygenerovala správně
 
-- základní rozdělení do souborů `database.py`, `models.py`, `schemas.py`
-- SQLAlchemy model pro metadata souborů
-- Pydantic response modely pro upload, list a delete endpointy
-- zachování stávající logiky pro ukládání binárních souborů na disk
+- základní Alembic scaffolding a napojení `target_metadata = Base.metadata`
+- návrh modelu `Bucket` a vazby `StoredFile.bucket_id`
+- rozšíření Pydantic modelů pro buckety, billing a soft delete
+- zachování legacy `/files` endpointů vedle nových bucket/object endpointů
 
 ## Co bylo nutné opravit nebo doladit
 
-- importy mezi moduly tak, aby fungovalo spuštění `uvicorn main:app` i `uvicorn src.S3_Storage.main:app`
-- zachování compatibility s dříve uloženými daty pomocí migrace z `files_metadata.json`
-- ergonomii používání v browseru přes `user_id` query parametr
+- u SQLite bylo potřeba zapnout `render_as_batch=True`, jinak by alter operace na existujících tabulkách nebyly spolehlivé
+- první návrh migrace musel být doplněn o backfill existujících objektů do výchozích bucketů podle `user_id`
+- bylo potřeba vyřešit, že aplikace už nesmí spoléhat na `Base.metadata.create_all()` a schema musí vznikat přes `alembic upgrade head`
+- bylo potřeba ujasnit billing semantiku: `bandwidth_bytes` je kumulativní přenos, zatímco `current_storage_bytes` reprezentuje data at rest
 
 ## Jaké chyby nebo slabiny AI udělala
 
-- původní verze aplikace ještě nepoužívala SQLAlchemy, takže bylo nutné ji refaktorovat na databázovou vrstvu
-- bez doplnění dokumentace by mohlo být nejasné, odkud aplikaci správně spouštět
-- u endpointu pro stažení nelze vracet binární obsah přes Pydantic model, takže bylo potřeba ponechat `FileResponse`
+- AI měla tendenci navrhovat jen finální schéma bez rozdělení do tří po sobě jdoucích migrací, což neodpovídalo zadání
+- bez explicitního upozornění AI snadno navrhuje hard delete i při zavedení `is_deleted`, takže bylo nutné ručně pohlídat soft delete flow
+- AI sama neřešila, jak naložit s existujícími daty při přidání non-null `bucket_id`; to bylo nutné doplnit backfill logikou
+- u Alembic konfigurace bylo potřeba ručně ověřit importy a cestu k databázi, aby autogenerace a upgrade fungovaly z kořene repozitáře

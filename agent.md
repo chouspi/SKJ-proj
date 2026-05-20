@@ -4,21 +4,38 @@ Tento soubor shrnuje důležité informace pro další implementaci projektu. Je
 
 ## Aktuální stav repozitáře
 
-- V repozitáři je zatím jen jedna aplikace: `src/S3_Storage`.
-- Současná aplikace je FastAPI služba, která:
+- V repozitáři jsou teď dvě aplikace:
+  - `src/S3_Storage` - backendová FastAPI služba
+  - `src/web` - React + Vite + TypeScript frontend pro lokální práci nad aktuálním backendem
+- Současná backendová aplikace je stále monolitická FastAPI služba, která:
   - přijímá upload přes `POST /files/upload`
   - ukládá binární data přímo na lokální disk do `src/S3_Storage/storage/<user_id>/<file_id>`
   - metadata ukládá do SQLite databáze `src/S3_Storage/data/object_storage.db`
-  - nabízí `GET /files`, `GET /files/{file_id}`, `DELETE /files/{file_id}`
+  - používá Alembic migrace pro správu schématu databáze
+  - nabízí bucket endpointy `POST /buckets/`, `GET /buckets/`, `GET /buckets/{bucket_id}/objects/`, `GET /buckets/{bucket_id}/billing/`
+  - nabízí objektové endpointy `GET /files`, `GET /files/{file_id}`, `DELETE /files/{file_id}` a aliasy pod `/objects/{file_id}`
 - Identita uživatele se řeší přes `X-User-Id` header nebo `?user_id=` query parametr.
-- V `models.py` existuje pouze model `StoredFile` se sloupci:
+- V backendu teď existují modely `Bucket` a `StoredFile`.
+- `Bucket` aktuálně obsahuje minimálně:
   - `id`
   - `user_id`
+  - `name`
+  - `created_at`
+  - `bandwidth_bytes`
+  - `current_storage_bytes`
+  - `ingress_bytes`
+  - `egress_bytes`
+  - `internal_transfer_bytes`
+- `StoredFile` aktuálně obsahuje minimálně:
+  - `id`
+  - `user_id`
+  - `bucket_id`
   - `filename`
   - `path`
   - `size`
+  - `is_deleted`
   - `created_at`
-- Současné řešení je monolitické a fyzicky ukládá soubory na disk. To je přesně část, která se má v další fázi změnit.
+- Současné řešení je stále monolitické a fyzicky ukládá soubory na disk. To je přesně část, která se má v další fázi změnit při přechodu na gateway + broker + haystack.
 
 ## Cílová architektura
 
@@ -75,9 +92,10 @@ Fyzické uložení dat na disk bude zodpovědnost `Haystack Node`.
 ## Co zachovat z aktuální aplikace
 
 - FastAPI základ pro gateway lze zachovat.
-- SQLite + SQLAlchemy lze zachovat pro metadata/index.
+- SQLite + SQLAlchemy + Alembic lze zachovat pro metadata/index.
 - Identifikace uživatele přes `X-User-Id` nebo `user_id` je užitečná a může zůstat, pokud zadání výslovně nevyžádá jiný auth model.
 - UUID identifikátor objektu je vhodné zachovat jako `object_id`.
+- Bucket vrstvu a billing model lze zachovat a rozšířit i po přechodu na haystack architekturu.
 
 ## Co se musí změnit v S3 Gateway
 
@@ -87,10 +105,9 @@ Fyzické uložení dat na disk bude zodpovědnost `Haystack Node`.
   - `volume_id`
   - `offset`
   - `size`
-  - `is_deleted`
-- Současný `DELETE /files/{file_id}` dělá hard delete souboru i DB záznamu. To je v rozporu s cílovým zadáním.
-- Cílové mazání má být soft delete pouze v databázi gateway.
+- Současný backend už má `is_deleted` a soft delete na úrovni DB. To je v souladu s cílovým zadáním a má se zachovat.
 - `GET` download už nebude vracet lokální soubor z filesystemu gateway, ale bude interně číst přes HTTP z Haystack Node.
+- `path` je momentálně stále potřeba jen jako dočasný údaj pro monolitické lokální uložení. Po přechodu na haystack má být nahrazen fyzickou adresací přes `volume_id + offset + size`.
 
 ## Doporučený cílový význam polí metadat
 
@@ -208,8 +225,8 @@ Compaction logika nemá měnit obsah payloadů, jen jejich fyzické umístění.
 - samostatná implementace brokeru
 - samostatná implementace image workeru
 - samostatná implementace haystack node
-- migrace DB schématu pro nový metadata model
 - integrační vrstva mezi gateway a haystack přes broker
+- metadata pole `status`, `volume_id`, `offset` pro async haystack workflow
 
 ## Doporučený další postup implementace
 

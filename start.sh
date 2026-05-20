@@ -15,6 +15,11 @@ if ! command -v uvicorn >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v alembic >/dev/null 2>&1; then
+  printf 'Missing alembic. Install backend dependencies first.\n' >&2
+  exit 1
+fi
+
 if ! command -v npm >/dev/null 2>&1; then
   printf 'Missing npm. Install Node.js and npm first.\n' >&2
   exit 1
@@ -36,6 +41,12 @@ cleanup() {
 }
 
 trap cleanup EXIT INT TERM
+
+printf 'Applying database migrations\n'
+(
+  cd "$ROOT_DIR"
+  alembic upgrade head
+)
 
 printf 'Starting backend on http://127.0.0.1:8000\n'
 (
