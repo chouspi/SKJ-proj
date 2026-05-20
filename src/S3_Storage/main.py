@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Generator
@@ -10,7 +11,7 @@ from uuid import uuid4
 import httpx
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
-from sqlalchemy import inspect, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -36,6 +37,9 @@ try:
         ImageProcessRequest,
         ImageProcessResponse,
         LegacyFileMetadata,
+        ServiceHealthResponse,
+        SystemDashboardResponse,
+        SystemStatsResponse,
         TransferContext,
         UploadTargetInput,
         UserContext,
@@ -64,6 +68,9 @@ except ImportError:
         ImageProcessRequest,
         ImageProcessResponse,
         LegacyFileMetadata,
+        ServiceHealthResponse,
+        SystemDashboardResponse,
+        SystemStatsResponse,
         TransferContext,
         UploadTargetInput,
         UserContext,
@@ -307,6 +314,79 @@ async def root() -> HealthResponse:
     return HealthResponse(message="Object storage service is running.")
 
 
+async def check_service_health(url: str, timeout: float = 2.0) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(url)
+            return "healthy" if response.status_code < 500 else "unhealthy"
+    except Exception:
+        return "unreachable"
+
+
+@app.get(
+    "/system/stats",
+    response_model=SystemDashboardResponse,
+    summary="System dashboard statistics",
+    response_description="Aggregated system statistics and service health statuses.",
+)
+async def system_stats(db: Session = Depends(get_db)) -> SystemDashboardResponse:
+    broker_url = "http://127.0.0.1:8001/"
+    haystack_url = f"{settings.haystack_base_url.rstrip('/')}/"
+    image_worker_url = "http://127.0.0.1:8003/"
+
+    s3_status = "healthy"
+    broker_status, haystack_status, image_status = await asyncio.gather(
+        check_service_health(broker_url),
+        check_service_health(haystack_url),
+        check_service_health(image_worker_url),
+    )
+
+    total_result = db.execute(select(func.count(models.StoredFile.id)))
+    total_objects = total_result.scalar() or 0
+
+    uploading_result = db.execute(
+        select(func.count(models.StoredFile.id)).where(models.StoredFile.status == "uploading")
+    )
+    uploading = uploading_result.scalar() or 0
+
+    ready_result = db.execute(
+        select(func.count(models.StoredFile.id)).where(models.StoredFile.status == "ready")
+    )
+    ready = ready_result.scalar() or 0
+
+    deleted_result = db.execute(
+        select(func.count(models.StoredFile.id)).where(models.StoredFile.is_deleted.is_(True))
+    )
+    deleted = deleted_result.scalar() or 0
+
+    volume_result = db.execute(
+        select(func.count(models.StoredFile.volume_id.distinct())).where(models.StoredFile.volume_id.is_not(None))
+    )
+    volume_count = volume_result.scalar() or 0
+
+    size_result = db.execute(
+        select(func.coalesce(func.sum(models.StoredFile.size), 0))
+    )
+    total_size_bytes = size_result.scalar() or 0
+
+    return SystemDashboardResponse(
+        services=ServiceHealthResponse(
+            s3_gateway=s3_status,
+            message_broker=broker_status,
+            haystack_node=haystack_status,
+            image_processing=image_status,
+        ),
+        stats=SystemStatsResponse(
+            total_objects=total_objects,
+            uploading=uploading,
+            ready=ready,
+            deleted=deleted,
+            volume_count=volume_count,
+            total_size_bytes=total_size_bytes,
+        ),
+    )
+
+
 @app.post(
     "/buckets/",
     response_model=BucketSummary,
@@ -519,6 +599,26 @@ async def update_object_location(
         offset=payload.offset,
         size=payload.size,
     )
+
+
+@app.get(
+    "/upload/{file_id}",
+    response_model=FileSummary,
+    summary="Get upload status",
+    response_description="Current status of the uploaded file.",
+    responses={
+        404: {"model": ErrorResponse, "description": "File not found."},
+    },
+)
+async def get_upload_status(
+    path_input: FilePathInput = Depends(get_file_path_input),
+    user: UserContext = Depends(get_user_context),
+    db: Session = Depends(get_db),
+) -> FileSummary:
+    stored_file = get_stored_file_or_404(db, str(path_input.file_id), include_deleted=True)
+    if stored_file.user_id != user.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    return FileSummary.model_validate(stored_file)
 
 
 @app.post(

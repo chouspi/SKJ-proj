@@ -107,9 +107,37 @@ async def run_worker(settings: Settings = settings) -> None:
             await asyncio.sleep(1)
 
 
+HEALTH_HOST = "127.0.0.1"
+HEALTH_PORT = 8003
+
+
+async def health_http_server() -> None:
+    async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            request = await reader.read(1024)
+            if b"GET /" in request:
+                writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nOK")
+            else:
+                writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
+            await writer.drain()
+        except Exception:
+            pass
+        finally:
+            writer.close()
+
+    server = await asyncio.start_server(handler, HEALTH_HOST, HEALTH_PORT)
+    logger.info("Health HTTP server listening on %s:%s", HEALTH_HOST, HEALTH_PORT)
+    async with server:
+        await server.serve_forever()
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(run_worker())
+
+    async def runner() -> None:
+        await asyncio.gather(run_worker(), health_http_server())
+
+    asyncio.run(runner())
 
 
 if __name__ == "__main__":

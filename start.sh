@@ -6,7 +6,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="$ROOT_DIR/src/web"
 
 if [ -f "$ROOT_DIR/.venv/bin/activate" ]; then
-  # shellcheck disable=SC1091
   source "$ROOT_DIR/.venv/bin/activate"
 fi
 
@@ -31,34 +30,18 @@ if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
 fi
 
 cleanup() {
-  if [ -n "${BROKER_PID:-}" ] && kill -0 "$BROKER_PID" >/dev/null 2>&1; then
-    kill "$BROKER_PID" >/dev/null 2>&1 || true
-  fi
-
-  if [ -n "${HAYSTACK_PID:-}" ] && kill -0 "$HAYSTACK_PID" >/dev/null 2>&1; then
-    kill "$HAYSTACK_PID" >/dev/null 2>&1 || true
-  fi
-
-  if [ -n "${IMG_WORKER_PID:-}" ] && kill -0 "$IMG_WORKER_PID" >/dev/null 2>&1; then
-    kill "$IMG_WORKER_PID" >/dev/null 2>&1 || true
-  fi
-
-  if [ -n "${BACKEND_PID:-}" ] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
-    kill "$BACKEND_PID" >/dev/null 2>&1 || true
-  fi
-
-  if [ -n "${FRONTEND_PID:-}" ] && kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
-    kill "$FRONTEND_PID" >/dev/null 2>&1 || true
-  fi
+  for pid in "${BROKER_PID:-}" "${HAYSTACK_PID:-}" "${IMG_WORKER_PID:-}" "${BACKEND_PID:-}" "${FRONTEND_PID:-}"; do
+    if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then
+      kill "$pid" >/dev/null 2>&1 || true
+    fi
+  done
 }
 
 trap cleanup EXIT INT TERM
 
 printf 'Applying database migrations\n'
-(
-  cd "$ROOT_DIR"
-  alembic upgrade head
-)
+cd "$ROOT_DIR"
+alembic upgrade head
 
 printf 'Starting message broker on http://127.0.0.1:8001\n'
 (

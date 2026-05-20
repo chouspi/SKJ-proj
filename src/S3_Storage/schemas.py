@@ -166,3 +166,24 @@ class LegacyFileMetadata(BaseModel):
     path: str
     size: int = Field(..., ge=0)
     created_at: datetime
+
+
+class SystemStatsResponse(BaseModel):
+    total_objects: int
+    uploading: int
+    ready: int
+    deleted: int
+    volume_count: int
+    total_size_bytes: int
+
+
+class ServiceHealthResponse(BaseModel):
+    s3_gateway: str
+    message_broker: str
+    haystack_node: str
+    image_processing: str
+
+
+class SystemDashboardResponse(BaseModel):
+    services: ServiceHealthResponse
+    stats: SystemStatsResponse
