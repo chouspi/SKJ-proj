@@ -125,6 +125,18 @@ class FileUploadResponse(FileSummary):
     pass
 
 
+class ImageProcessRequest(BaseModel):
+    operation: str = Field(..., min_length=1, max_length=64)
+    params: dict[str, int | float | str | bool] = Field(default_factory=dict)
+
+
+class ImageProcessResponse(BaseModel):
+    status: str
+    object_id: UUID
+    bucket_id: int
+    operation: str
+
+
 class DeleteFileResponse(BaseModel):
     id: UUID
     message: str = Field(..., description="Deletion result.")

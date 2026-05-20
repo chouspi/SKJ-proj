@@ -9,6 +9,7 @@ Tento soubor shrnuje důležité informace pro další implementaci projektu. Je
   - `src/web` - React + Vite + TypeScript frontend pro lokální práci nad aktuálním backendem
   - `src/messagebroker` - samostatný FastAPI WebSocket broker pro interní Pub/Sub komunikaci
   - `src/haystack` - samostatný FastAPI storage node pro append-only volume soubory
+  - `src/imgprocessing` - samostatný async image worker pro NumPy operace nad obrázky
 - `src/S3_Storage` je aktuálně S3 Gateway, která:
   - přijímá upload přes `POST /files/upload`
   - nové uploady fyzicky neukládá do vlastního filesystemu
@@ -51,6 +52,12 @@ Tento soubor shrnuje důležité informace pro další implementaci projektu. Je
   - rotovat volume po překročení limitu velikosti
   - publikovat ACK do `storage.ack`
   - vracet raw data přes `GET /volume/{volume_id}/{offset}/{size}`
+- `src/imgprocessing` už umí:
+  - poslouchat broker topic `image.jobs`
+  - stáhnout původní objekt přes S3 Gateway
+  - provést NumPy operace `negative`, `mirror`, `crop`, `brightness`, `grayscale`
+  - nahrát výsledek zpět přes S3 Gateway jako nový objekt
+  - publikovat výsledek do `image.done`
 
 ## Cílová architektura
 
@@ -253,7 +260,6 @@ Compaction logika nemá měnit obsah payloadů, jen jejich fyzické umístění.
 
 ## Co zatím v repozitáři není
 
-- samostatná implementace image workeru
 - compaction skript nebo chráněný Haystack endpoint
 
 ## Doporučený další postup implementace

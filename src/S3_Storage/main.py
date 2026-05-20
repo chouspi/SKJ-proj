@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 
 try:
     from . import models
-    from .broker_client import StorageAckListener, publish_storage_write
+    from .broker_client import StorageAckListener, publish_image_job, publish_storage_write
     from .database import DATA_DIR, SessionLocal, engine
     from .schemas import (
         BucketBillingResponse,
@@ -30,6 +30,8 @@ try:
         FileSummary,
         FileUploadResponse,
         HealthResponse,
+        ImageProcessRequest,
+        ImageProcessResponse,
         LegacyFileMetadata,
         TransferContext,
         UploadTargetInput,
@@ -39,7 +41,7 @@ try:
     from .settings import settings
 except ImportError:
     import models
-    from broker_client import StorageAckListener, publish_storage_write
+    from broker_client import StorageAckListener, publish_image_job, publish_storage_write
     from database import DATA_DIR, SessionLocal, engine
     from schemas import (
         BucketBillingResponse,
@@ -53,6 +55,8 @@ except ImportError:
         FileSummary,
         FileUploadResponse,
         HealthResponse,
+        ImageProcessRequest,
+        ImageProcessResponse,
         LegacyFileMetadata,
         TransferContext,
         UploadTargetInput,
@@ -397,6 +401,58 @@ async def get_bucket_billing(
     bucket = get_bucket_or_404(db, path_input.bucket_id)
     ensure_bucket_access(bucket, user)
     return BucketBillingResponse.model_validate(bucket)
+
+
+@app.post(
+    "/buckets/{bucket_id}/objects/{file_id}/process",
+    response_model=ImageProcessResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Start image processing job",
+    response_description="Image processing job dispatch confirmation.",
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid request."},
+        403: {"model": ErrorResponse, "description": "Access denied."},
+        404: {"model": ErrorResponse, "description": "Bucket or file not found."},
+        409: {"model": ErrorResponse, "description": "File is not ready."},
+    },
+)
+async def process_object(
+    payload: ImageProcessRequest,
+    path_input: BucketPathInput = Depends(get_bucket_path_input),
+    file_input: FilePathInput = Depends(get_file_path_input),
+    user: UserContext = Depends(get_user_context),
+    db: Session = Depends(get_db),
+) -> ImageProcessResponse:
+    bucket = get_bucket_or_404(db, path_input.bucket_id)
+    ensure_bucket_access(bucket, user)
+    stored_file = get_stored_file_or_404(db, str(file_input.file_id))
+
+    if stored_file.bucket_id != bucket.id or stored_file.user_id != user.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    if stored_file.status != "ready":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"File is not ready yet. Current status: {stored_file.status}.",
+        )
+
+    await publish_image_job(
+        settings,
+        {
+            "object_id": stored_file.id,
+            "bucket_id": bucket.id,
+            "user_id": user.user_id,
+            "operation": payload.operation,
+            "params": payload.params,
+            "filename": stored_file.filename,
+        },
+    )
+
+    return ImageProcessResponse(
+        status="processing_started",
+        object_id=file_input.file_id,
+        bucket_id=bucket.id,
+        operation=payload.operation,
+    )
 
 
 @app.post(

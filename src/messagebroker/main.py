@@ -52,7 +52,7 @@ def create_app() -> FastAPI:
                         message_id=await manager.next_message_id(),
                         payload=incoming.payload,
                     )
-                    await manager.broadcast(incoming.topic, delivery_event.model_dump(mode="json"))
+                    await manager.broadcast(incoming.topic, delivery_event.model_dump(mode="python"))
                     continue
 
                 await manager.subscribe(websocket, incoming.topic)

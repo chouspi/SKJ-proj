@@ -12,6 +12,7 @@ FastAPI S3 Gateway pro object storage službu. Metadata jsou v SQLite přes SQLA
 - `GET /files` vrátí seznam objektů aktuálního uživatele napříč buckety
 - `GET /files/{file_id}` nebo `GET /objects/{file_id}` stáhne objekt přes Haystack, pokud má status `ready`
 - `DELETE /files/{file_id}` nebo `DELETE /objects/{file_id}` provede soft delete
+- `POST /buckets/{bucket_id}/objects/{object_id}/process` spustí async image processing job přes broker topic `image.jobs`
 
 Pokud upload nepředá `bucket_id`, backend automaticky použije nebo vytvoří výchozí bucket `default-<user_id>`.
 
@@ -114,6 +115,26 @@ Pro lokální spuštění celého řetězce lze použít root skript:
 - `internal_transfer_bytes`: interní přenosy označené `X-Internal-Source: true`
 
 Soft delete nemaže fyzická data na disku a nesnižuje `current_storage_bytes`.
+
+## Image Processing
+
+Gateway neprovádí CPU-bound operace nad obrázky. Pouze zvaliduje request, ověří práva a stav objektu a pošle job do brokeru.
+
+```bash
+curl -X POST "http://127.0.0.1:8000/buckets/1/objects/<file_id>/process?user_id=alice" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"operation\":\"grayscale\",\"params\":{}}"
+```
+
+Podporované operace workeru:
+
+- `negative`
+- `mirror`
+- `crop`
+- `brightness`
+- `grayscale`
+
+Výsledek se nahraje zpět přes Gateway jako nový objekt a worker publikuje stav do `image.done`.
 
 ## Testování přes Swagger UI
 

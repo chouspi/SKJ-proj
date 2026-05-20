@@ -44,6 +44,19 @@ async def publish_storage_write(settings: Settings, object_id: str, data: bytes)
         await websocket.send(encode_message(message))
 
 
+async def publish_image_job(settings: Settings, payload: dict[str, Any]) -> None:
+    async with websockets.connect(settings.broker_url, max_size=None) as websocket:
+        await websocket.send(
+            encode_message(
+                {
+                    "action": "publish",
+                    "topic": settings.image_jobs_topic,
+                    "payload": payload,
+                }
+            )
+        )
+
+
 class StorageAckListener:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
