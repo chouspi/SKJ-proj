@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 
+type Bucket = {
+  id: number
+  user_id: string
+  name: string
+  created_at: string
+  bandwidth_bytes: number
+  current_storage_bytes: number
+  ingress_bytes: number
+  egress_bytes: number
+  internal_transfer_bytes: number
+}
+
 type UploadedFile = {
   id: string
   bucket_id: number
@@ -33,8 +45,36 @@ function Upload() {
   const [errorMessage, setErrorMessage] = useState('')
   const [uploadedObject, setUploadedObject] = useState<UploadedFile | null>(null)
   const [pollStatus, setPollStatus] = useState<string | null>(null)
+  const [buckets, setBuckets] = useState<Bucket[]>([])
+  const [selectedBucketId, setSelectedBucketId] = useState<number | null>(null)
+  const [isLoadingBuckets, setIsLoadingBuckets] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const pollingRef = useRef<number | null>(null)
+
+  async function loadBuckets(userId: string) {
+    setIsLoadingBuckets(true)
+    try {
+      const response = await fetch(`/buckets/?user_id=${encodeURIComponent(userId)}`)
+      if (!response.ok) return
+      const payload = (await response.json()) as Bucket[]
+      setBuckets(payload)
+      if (payload.length > 0) {
+        setSelectedBucketId((prev) =>
+          prev !== null && payload.some((b) => b.id === prev) ? prev : payload[0].id,
+        )
+      } else {
+        setSelectedBucketId(null)
+      }
+    } catch {
+      setBuckets([])
+    } finally {
+      setIsLoadingBuckets(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadBuckets(activeUserId)
+  }, [activeUserId])
 
   function clearMessages() {
     setErrorMessage('')
@@ -107,7 +147,12 @@ function Upload() {
       const formData = new FormData()
       formData.append('file', selectedFile)
 
-      const response = await fetch(`/upload?user_id=${encodeURIComponent(activeUserId)}`, {
+      const query = new URLSearchParams({ user_id: activeUserId })
+      if (selectedBucketId !== null) {
+        query.set('bucket_id', String(selectedBucketId))
+      }
+
+      const response = await fetch(`/files/upload?${query.toString()}`, {
         method: 'POST',
         body: formData,
       })
@@ -164,12 +209,7 @@ function Upload() {
       <section className="hero-panel">
         <div>
           <p className="eyebrow">Nahrani souboru</p>
-          <h1>Nahraj fotku a sleduj zpracovani</h1>
-          <p className="hero-copy">
-            Soubor se nahraje na backend, ktery jej zaradi ke zpracovani.
-            Backend odpovi 202 Accepted — soubor neni hned ulozeny, ceka se na zapis do Haystacku.
-            Po ACK od Haystacku se status zmeni na <strong>ready</strong>.
-          </p>
+          <h1>Nahraj soubor</h1>
         </div>
       </section>
 
@@ -184,6 +224,27 @@ function Upload() {
             </div>
 
             <form className="stack" onSubmit={handleUpload}>
+              <label className="field">
+                <span>Album (bucket)</span>
+                <select
+                  value={selectedBucketId ?? ''}
+                  onChange={(event) => setSelectedBucketId(event.target.value ? Number(event.target.value) : null)}
+                  disabled={isLoadingBuckets}
+                >
+                  {isLoadingBuckets ? (
+                    <option value="">Nacitam alba...</option>
+                  ) : buckets.length === 0 ? (
+                    <option value="">Zadna alba</option>
+                  ) : (
+                    buckets.map((bucket) => (
+                      <option key={bucket.id} value={bucket.id}>
+                        {bucket.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+
               <label className="field upload-dropzone">
                 <span>{selectedFile ? selectedFile.name : 'Vyber soubor z disku'}</span>
                 <small>
@@ -203,20 +264,6 @@ function Upload() {
                 {isUploading ? 'Nahravam...' : 'Upload'}
               </button>
             </form>
-          </div>
-
-          <div className="panel info-panel">
-            <div className="panel-heading">
-              <h2>API volani</h2>
-            </div>
-            <ul className="info-list">
-              <li>
-                Upload: <code>POST /upload</code> — vrati 202 Accepted
-              </li>
-              <li>
-                Status: <code>GET /upload/&lt;id&gt;</code>
-              </li>
-            </ul>
           </div>
         </aside>
 
@@ -269,10 +316,10 @@ function Upload() {
 
                 <div className="upload-message">
                   {pollStatus === 'ready'
-                    ? 'Soubor byl uspesne zapsan do Haystacku a je pripraven.'
+                    ? 'Soubor byl uspesne zapsan a je pripraven.'
                     : pollStatus === 'failed'
                       ? 'Zpracovani souboru selhalo.'
-                      : 'Soubor byl prijat, ceka se na zapis do Haystacku.'}
+                      : 'Soubor byl prijat, ceka se na ACK API volani.'}
                 </div>
 
                 {pollStatus !== 'ready' && pollStatus !== 'failed' ? (
