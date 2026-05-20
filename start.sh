@@ -22,12 +22,19 @@ fi
 
 # ---------- Python virtual environment ----------
 
-if [ ! -f "$VENV_DIR/bin/activate" ]; then
+if [ -f "$VENV_DIR/bin/activate" ]; then
+  source "$VENV_DIR/bin/activate"
+elif [ -f "$VENV_DIR/Scripts/activate" ]; then
+  source "$VENV_DIR/Scripts/activate"
+else
   printf 'Creating Python virtual environment...\n'
   $PYTHON -m venv "$VENV_DIR"
+  if [ -f "$VENV_DIR/bin/activate" ]; then
+    source "$VENV_DIR/bin/activate"
+  else
+    source "$VENV_DIR/Scripts/activate"
+  fi
 fi
-
-source "$VENV_DIR/bin/activate"
 
 # ---------- install Python dependencies ----------
 

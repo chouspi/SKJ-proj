@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -f "$ROOT_DIR/.venv/bin/activate" ]; then
   source "$ROOT_DIR/.venv/bin/activate"
+elif [ -f "$ROOT_DIR/.venv/Scripts/activate" ]; then
+  source "$ROOT_DIR/.venv/Scripts/activate"
 fi
 
 if ! command -v uvicorn >/dev/null 2>&1; then
