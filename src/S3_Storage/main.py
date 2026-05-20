@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sys
 from collections.abc import Generator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -434,15 +435,19 @@ async def system_volumes(db: Session = Depends(get_db)) -> dict:
         )
         deleted_objects = deleted_q.scalar() or 0
 
-        size_q = db.execute(
+        active_size_q = db.execute(
             select(func.coalesce(func.sum(models.StoredFile.size), 0))
             .where(models.StoredFile.volume_id == vid)
+            .where(models.StoredFile.is_deleted.is_(False))
+            .where(models.StoredFile.status == "ready")
         )
-        total_data_bytes = size_q.scalar() or 0
+        active_data_bytes = active_size_q.scalar() or 0
 
         file_size = volume_file_sizes.get(vid, 0)
         usage_pct = round((file_size / max_size * 100) if max_size > 0 else 0, 1)
-        fragmentation = round((1 - total_data_bytes / file_size) * 100, 1) if file_size > 0 else 0.0
+        fragmentation = round((1 - active_data_bytes / file_size) * 100, 1) if file_size > 0 else 0.0
+        if fragmentation < 0:
+            fragmentation = 0.0
 
         results.append({
             "volume_id": vid,
@@ -457,6 +462,50 @@ async def system_volumes(db: Session = Depends(get_db)) -> dict:
         })
 
     return {"volumes": results}
+
+
+_compaction_tasks: dict[int, dict] = {}
+
+
+@app.post("/system/compaction/{volume_id}")
+async def run_compaction(volume_id: int) -> dict:
+    if volume_id < 1:
+        raise HTTPException(status_code=400, detail="Volume ID must be >= 1.")
+
+    if volume_id in _compaction_tasks and _compaction_tasks[volume_id]["status"] == "running":
+        raise HTTPException(status_code=409, detail="Compaction already running for this volume.")
+
+    _compaction_tasks[volume_id] = {"status": "running", "log": ""}
+
+    async def _run():
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, "-m", "src.haystack.compact",
+                str(volume_id),
+                "--gateway-url", "http://127.0.0.1:8000",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            stdout, _ = await proc.communicate()
+            log = stdout.decode("utf-8", errors="replace")
+            if proc.returncode == 0:
+                _compaction_tasks[volume_id] = {"status": "completed", "log": log}
+            else:
+                _compaction_tasks[volume_id] = {"status": "failed", "log": log}
+        except Exception as exc:
+            _compaction_tasks[volume_id] = {"status": "failed", "log": str(exc)}
+
+    asyncio.create_task(_run())
+
+    return {"message": "Compaction started.", "volume_id": volume_id}
+
+
+@app.get("/system/compaction/{volume_id}")
+async def get_compaction_status(volume_id: int) -> dict:
+    task = _compaction_tasks.get(volume_id)
+    if task is None:
+        return {"volume_id": volume_id, "status": "not_started", "log": ""}
+    return {"volume_id": volume_id, **task}
 
 
 @app.post(

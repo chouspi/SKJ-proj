@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 
 def process_image(image_bytes: bytes, operation: str, params: dict[str, Any]) -> bytes:
@@ -34,6 +34,24 @@ def process_image(image_bytes: bytes, operation: str, params: dict[str, Any]) ->
         rgb = img_array.astype(np.float32)
         gray = (0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]).astype(np.uint8)
         return encode_png(gray)
+
+    if operation == "resize":
+        pct = int(params.get("percent", 50))
+        if pct < 1 or pct > 200:
+            raise ValueError("Resize percent must be between 1 and 200.")
+        width = int(image.width * pct / 100)
+        height = int(image.height * pct / 100)
+        resized = image.resize((width, height), Image.LANCZOS)
+        new_array = np.array(resized)
+        return encode_png(new_array)
+
+    if operation == "blur":
+        radius = float(params.get("radius", 2.0))
+        if radius <= 0:
+            raise ValueError("Blur radius must be positive.")
+        blurred = image.filter(ImageFilter.GaussianBlur(radius=radius))
+        new_array = np.array(blurred)
+        return encode_png(new_array)
 
     raise ValueError(f"Unsupported image operation: {operation}")
 
