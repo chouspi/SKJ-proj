@@ -1,6 +1,6 @@
 # S3 Storage
 
-FastAPI backend pro jednoduchou object storage službu. Binární soubory se ukládají na disk, metadata jsou v SQLite přes SQLAlchemy ORM a schéma databáze se spravuje přes Alembic migrace.
+FastAPI S3 Gateway pro object storage službu. Metadata jsou v SQLite přes SQLAlchemy ORM, schéma databáze se spravuje přes Alembic migrace a nové uploady se fyzicky ukládají přes Message Broker do Haystack Node.
 
 ## Co umí
 
@@ -8,9 +8,9 @@ FastAPI backend pro jednoduchou object storage službu. Binární soubory se ukl
 - `GET /buckets/` vrátí buckety aktuálního uživatele
 - `GET /buckets/{bucket_id}/objects/` vrátí objekty v bucketu
 - `GET /buckets/{bucket_id}/billing/` vrátí billing counters bucketu
-- `POST /files/upload` nahraje soubor přes `multipart/form-data`
+- `POST /files/upload` přijme soubor, uloží metadata se stavem `uploading`, pošle payload do `storage.write` a vrátí `202 Accepted`
 - `GET /files` vrátí seznam objektů aktuálního uživatele napříč buckety
-- `GET /files/{file_id}` nebo `GET /objects/{file_id}` stáhne objekt, pokud má uživatel přístup
+- `GET /files/{file_id}` nebo `GET /objects/{file_id}` stáhne objekt přes Haystack, pokud má status `ready`
 - `DELETE /files/{file_id}` nebo `DELETE /objects/{file_id}` provede soft delete
 
 Pokud upload nepředá `bucket_id`, backend automaticky použije nebo vytvoří výchozí bucket `default-<user_id>`.
@@ -42,8 +42,21 @@ V repozitáři jsou 3 revize:
 - `0001_buckets` - bucket tabulka a vazba objektu na bucket
 - `0002_bucket_billing` - billing a storage counters
 - `0003_soft_delete` - příznak `is_deleted`
+- `0004_haystack_metadata` - `status`, `volume_id`, `offset` a nullable legacy `path`
 
-## Uložení na disk
+## Uložení dat
+
+S3 Gateway už nové soubory fyzicky neukládá do svého `storage/` adresáře.
+
+Upload flow:
+
+1. Gateway přijme soubor a vytvoří DB záznam se `status = "uploading"`.
+2. Gateway pošle MessagePack zprávu do broker topicu `storage.write`.
+3. Haystack Node zapíše data do `volume_<n>.dat`.
+4. Haystack publikuje ACK do `storage.ack`.
+5. Gateway ACK listener doplní `volume_id`, `offset`, `size` a nastaví `status = "ready"`.
+
+Legacy adresář může pořád existovat kvůli starším datům:
 
 ```text
 src/S3_Storage/
@@ -54,6 +67,8 @@ src/S3_Storage/
     object_storage.db
     files_metadata.json   # volitelný legacy zdroj pro jednorázovou migraci
 ```
+
+Haystack volume soubory jsou v `src/haystack/data/volumes/`.
 
 ## Instalace
 
@@ -69,6 +84,12 @@ pip install -r src/S3_Storage/requirements.txt
 # nejdřív aplikuj migrace
 alembic upgrade head
 
+# spust broker
+uvicorn src.messagebroker.main:app --reload --host 127.0.0.1 --port 8001
+
+# spust Haystack Node
+uvicorn src.haystack.main:app --reload --host 127.0.0.1 --port 8002
+
 # z kořene repozitáře
 uvicorn src.S3_Storage.main:app --reload
 
@@ -78,11 +99,17 @@ uvicorn main:app --reload
 
 Server běží standardně na `http://127.0.0.1:8000`.
 
+Pro lokální spuštění celého řetězce lze použít root skript:
+
+```bash
+./start.sh
+```
+
 ## Billing logika
 
 - `bandwidth_bytes`: celkový součet přenesených bajtů pro bucket
 - `current_storage_bytes`: součet velikostí všech uložených objektů v bucketu
-- `ingress_bytes`: externí uploady
+- `ingress_bytes`: úspěšně ACKnuté uploady
 - `egress_bytes`: externí downloady
 - `internal_transfer_bytes`: interní přenosy označené `X-Internal-Source: true`
 

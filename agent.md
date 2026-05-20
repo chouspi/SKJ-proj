@@ -9,9 +9,13 @@ Tento soubor shrnuje důležité informace pro další implementaci projektu. Je
   - `src/web` - React + Vite + TypeScript frontend pro lokální práci nad aktuálním backendem
   - `src/messagebroker` - samostatný FastAPI WebSocket broker pro interní Pub/Sub komunikaci
   - `src/haystack` - samostatný FastAPI storage node pro append-only volume soubory
-- Současná backendová aplikace je stále monolitická FastAPI služba, která:
+- `src/S3_Storage` je aktuálně S3 Gateway, která:
   - přijímá upload přes `POST /files/upload`
-  - ukládá binární data přímo na lokální disk do `src/S3_Storage/storage/<user_id>/<file_id>`
+  - nové uploady fyzicky neukládá do vlastního filesystemu
+  - publikuje binární data přes broker do `storage.write`
+  - na pozadí poslouchá ACK zprávy ze `storage.ack`
+  - po ACK nastavuje objekt na `status = "ready"` a ukládá `volume_id`, `offset`, `size`
+  - download čte interně z Haystack Node přes `/volume/{volume_id}/{offset}/{size}`
   - metadata ukládá do SQLite databáze `src/S3_Storage/data/object_storage.db`
   - používá Alembic migrace pro správu schématu databáze
   - nabízí bucket endpointy `POST /buckets/`, `GET /buckets/`, `GET /buckets/{bucket_id}/objects/`, `GET /buckets/{bucket_id}/billing/`
@@ -35,9 +39,12 @@ Tento soubor shrnuje důležité informace pro další implementaci projektu. Je
   - `filename`
   - `path`
   - `size`
+  - `status`
+  - `volume_id`
+  - `offset`
   - `is_deleted`
   - `created_at`
-- Současné řešení je stále monolitické a fyzicky ukládá soubory na disk. To je přesně část, která se má v další fázi změnit při přechodu na gateway + broker + haystack.
+- `path` je už jen legacy/dočasné pole pro starší lokální data. Nové Haystack uploady používají `volume_id + offset + size`.
 - `src/haystack` už umí:
   - background subscribe na `storage.write`
   - append-only zapisovat payload do `volume_<n>.dat`
@@ -54,7 +61,7 @@ Projekt má být rozdělený na 4 nezávislé aplikace/služby:
 3. `Image Processing Node`
 4. `Haystack Node`
 
-Aktuální `src/S3_Storage` je jen základ budoucí `S3 Gateway`, ne finální podoba systému.
+Aktuální `src/S3_Storage` už plní roli `S3 Gateway` pro upload/download/delete flow přes broker a Haystack. Stále ale chybí image worker a compaction.
 
 Budoucí samostatné aplikace mají mít vlastní adresáře pod `src/`.
 
@@ -113,15 +120,11 @@ Fyzické uložení dat na disk bude zodpovědnost `Haystack Node`.
 
 ## Co se musí změnit v S3 Gateway
 
-- `path` už nesmí být hlavní údaj pro čtení objektu.
-- Metadata model bude potřeba rozšířit minimálně o:
-  - `status`
-  - `volume_id`
-  - `offset`
-  - `size`
+- `path` už nesmí být hlavní údaj pro čtení nových objektů.
+- Metadata model už obsahuje `status`, `volume_id`, `offset`, `size`.
 - Současný backend už má `is_deleted` a soft delete na úrovni DB. To je v souladu s cílovým zadáním a má se zachovat.
-- `GET` download už nebude vracet lokální soubor z filesystemu gateway, ale bude interně číst přes HTTP z Haystack Node.
-- `path` je momentálně stále potřeba jen jako dočasný údaj pro monolitické lokální uložení. Po přechodu na haystack má být nahrazen fyzickou adresací přes `volume_id + offset + size`.
+- `GET` download už interně čte přes HTTP z Haystack Node.
+- Další změny v gateway mají být jen kolem compaction/admin API a případného image worker flow, ne návrat k lokálnímu ukládání souborů.
 
 ## Doporučený cílový význam polí metadat
 
@@ -251,18 +254,14 @@ Compaction logika nemá měnit obsah payloadů, jen jejich fyzické umístění.
 ## Co zatím v repozitáři není
 
 - samostatná implementace image workeru
-- integrační vrstva mezi gateway a haystack přes broker
-- metadata pole `status`, `volume_id`, `offset` pro async haystack workflow
+- compaction skript nebo chráněný Haystack endpoint
 
 ## Doporučený další postup implementace
 
-1. Rozhodnout a zafixovat strukturu projektových adresářů pro 4 služby.
-2. Navrhnout nový metadata model gateway.
-3. Dopsat nebo upravit broker kontrakty.
-4. Přidat Haystack Node se zápisem, rotací a read endpointem.
-5. Přepojit gateway upload flow na asynchronní write + ACK.
-6. Upravit download a delete flow.
-7. Nakonec řešit compaction.
+1. Přidat Image Processing Node, pokud je potřeba pro projektovou část 1.
+2. Přidat compaction skript nebo chráněný endpoint v Haystack Node.
+3. Volitelně doladit frontend polling pro `uploading -> ready` stavy.
+4. Dopsat integrační dokumentaci pro spuštění všech služeb.
 
 ## Důležité omezení pro další agenty
 

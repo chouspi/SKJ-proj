@@ -7,15 +7,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-import aiofiles
+import httpx
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 try:
     from . import models
+    from .broker_client import StorageAckListener, publish_storage_write
     from .database import DATA_DIR, SessionLocal, engine
     from .schemas import (
         BucketBillingResponse,
@@ -35,8 +36,10 @@ try:
         UserContext,
         UserIdentifierInput,
     )
+    from .settings import settings
 except ImportError:
     import models
+    from broker_client import StorageAckListener, publish_storage_write
     from database import DATA_DIR, SessionLocal, engine
     from schemas import (
         BucketBillingResponse,
@@ -56,19 +59,20 @@ except ImportError:
         UserContext,
         UserIdentifierInput,
     )
+    from settings import settings
 
 
 BASE_DIR = Path(__file__).resolve().parent
-STORAGE_DIR = BASE_DIR / "storage"
 LEGACY_METADATA_FILE = DATA_DIR / "files_metadata.json"
 DEFAULT_BUCKET_PREFIX = "default"
 USER_ID_PATTERN = re.compile(r"[^a-zA-Z0-9._-]")
 
 app = FastAPI(
     title="Mini Object Storage Service",
-    description="Object storage backend with buckets, billing counters and soft delete.",
-    version="3.0.0",
+    description="S3 Gateway with bucket metadata, billing, soft delete and Haystack-backed storage.",
+    version="4.0.0",
 )
+storage_ack_listener = StorageAckListener(settings)
 
 
 def sanitize_user_id(user_id: str) -> str:
@@ -83,7 +87,6 @@ def sanitize_user_id(user_id: str) -> str:
 
 def ensure_storage_ready() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -226,6 +229,7 @@ def migrate_legacy_metadata(db: Session) -> None:
                 filename=legacy_item.filename,
                 path=legacy_item.path,
                 size=legacy_item.size,
+                status="ready",
                 is_deleted=False,
                 created_at=legacy_item.created_at,
             )
@@ -260,15 +264,6 @@ def resolve_upload_bucket(db: Session, user: UserContext, upload_target: UploadT
     return bucket
 
 
-def apply_upload_billing(bucket: models.Bucket, size: int, transfer: TransferContext) -> None:
-    bucket.bandwidth_bytes += size
-    bucket.current_storage_bytes += size
-    if transfer.is_internal:
-        bucket.internal_transfer_bytes += size
-    else:
-        bucket.ingress_bytes += size
-
-
 def apply_download_billing(bucket: models.Bucket, size: int, transfer: TransferContext) -> None:
     bucket.bandwidth_bytes += size
     if transfer.is_internal:
@@ -284,6 +279,12 @@ async def on_startup() -> None:
     if inspector.has_table("stored_files") and inspector.has_table("buckets"):
         with SessionLocal() as db:
             migrate_legacy_metadata(db)
+    await storage_ack_listener.start()
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    await storage_ack_listener.stop()
 
 
 @app.get(
@@ -401,9 +402,9 @@ async def get_bucket_billing(
 @app.post(
     "/files/upload",
     response_model=FileUploadResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Upload file",
-    response_description="Metadata of the uploaded file.",
+    response_description="Metadata of the accepted file upload.",
     responses={
         400: {"model": ErrorResponse, "description": "Invalid request."},
         403: {"model": ErrorResponse, "description": "Access denied."},
@@ -413,7 +414,6 @@ async def get_bucket_billing(
 async def upload_file(
     file: UploadFile = File(..., description="Binary file to upload."),
     upload_target: UploadTargetInput = Depends(get_upload_target_input),
-    transfer: TransferContext = Depends(get_transfer_context),
     user: UserContext = Depends(get_user_context),
     db: Session = Depends(get_db),
 ) -> FileUploadResponse:
@@ -425,35 +425,41 @@ async def upload_file(
 
     bucket = resolve_upload_bucket(db, user, upload_target)
     file_id = str(uuid4())
-    user_storage_dir = STORAGE_DIR / user.user_id
-    user_storage_dir.mkdir(parents=True, exist_ok=True)
-    file_path = user_storage_dir / file_id
-    size = 0
+    data = await file.read()
+    size = len(data)
+    if size == 0:
+        await file.close()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file must not be empty.")
 
     try:
-        async with aiofiles.open(file_path, "wb") as output:
-            while chunk := await file.read(1024 * 1024):
-                size += len(chunk)
-                await output.write(chunk)
-
         stored_file = models.StoredFile(
             id=file_id,
             user_id=user.user_id,
             bucket_id=bucket.id,
             filename=file.filename,
-            path=str(file_path),
+            path=None,
             size=size,
+            status="uploading",
+            volume_id=None,
+            offset=None,
             is_deleted=False,
             created_at=datetime.now(timezone.utc),
         )
         db.add(stored_file)
-        apply_upload_billing(bucket, size, transfer)
         db.commit()
         db.refresh(stored_file)
+
+        try:
+            await publish_storage_write(settings, file_id, data)
+        except Exception as exc:
+            stored_file.status = "failed"
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Message broker is unavailable; upload was not dispatched.",
+            ) from exc
     except Exception:
         db.rollback()
-        if file_path.exists():
-            file_path.unlink()
         raise
     finally:
         await file.close()
@@ -512,26 +518,38 @@ async def download_file(
     transfer: TransferContext = Depends(get_transfer_context),
     user: UserContext = Depends(get_user_context),
     db: Session = Depends(get_db),
-) -> FileResponse:
+) -> Response:
     stored_file = get_stored_file_or_404(db, str(path_input.file_id))
     if stored_file.user_id != user.user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
     ensure_bucket_access(stored_file.bucket, user)
 
-    file_path = Path(stored_file.path)
-    if not file_path.exists():
+    if stored_file.status != "ready":
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Stored file is missing from disk.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"File is not ready yet. Current status: {stored_file.status}.",
         )
+    if stored_file.volume_id is None or stored_file.offset is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="File has no Haystack location.")
+
+    haystack_url = (
+        f"{settings.haystack_base_url.rstrip('/')}/volume/"
+        f"{stored_file.volume_id}/{stored_file.offset}/{stored_file.size}"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        haystack_response = await client.get(haystack_url)
+    if haystack_response.status_code == status.HTTP_404_NOT_FOUND:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file is missing in Haystack.")
+    if haystack_response.status_code >= 400:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Haystack read failed.")
 
     apply_download_billing(stored_file.bucket, stored_file.size, transfer)
     db.commit()
 
-    return FileResponse(
-        path=file_path,
-        filename=stored_file.filename,
+    return Response(
+        content=haystack_response.content,
         media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{stored_file.filename}"'},
     )
 
 

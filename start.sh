@@ -31,6 +31,14 @@ if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
 fi
 
 cleanup() {
+  if [ -n "${BROKER_PID:-}" ] && kill -0 "$BROKER_PID" >/dev/null 2>&1; then
+    kill "$BROKER_PID" >/dev/null 2>&1 || true
+  fi
+
+  if [ -n "${HAYSTACK_PID:-}" ] && kill -0 "$HAYSTACK_PID" >/dev/null 2>&1; then
+    kill "$HAYSTACK_PID" >/dev/null 2>&1 || true
+  fi
+
   if [ -n "${BACKEND_PID:-}" ] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
     kill "$BACKEND_PID" >/dev/null 2>&1 || true
   fi
@@ -48,6 +56,20 @@ printf 'Applying database migrations\n'
   alembic upgrade head
 )
 
+printf 'Starting message broker on http://127.0.0.1:8001\n'
+(
+  cd "$ROOT_DIR"
+  uvicorn src.messagebroker.main:app --reload --host 127.0.0.1 --port 8001
+) &
+BROKER_PID=$!
+
+printf 'Starting Haystack node on http://127.0.0.1:8002\n'
+(
+  cd "$ROOT_DIR"
+  uvicorn src.haystack.main:app --reload --host 127.0.0.1 --port 8002
+) &
+HAYSTACK_PID=$!
+
 printf 'Starting backend on http://127.0.0.1:8000\n'
 (
   cd "$ROOT_DIR"
@@ -62,4 +84,4 @@ printf 'Starting frontend on http://127.0.0.1:5173\n'
 ) &
 FRONTEND_PID=$!
 
-wait -n "$BACKEND_PID" "$FRONTEND_PID"
+wait -n "$BROKER_PID" "$HAYSTACK_PID" "$BACKEND_PID" "$FRONTEND_PID"

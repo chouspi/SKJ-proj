@@ -48,8 +48,11 @@ class StoredFile(Base):
     user_id: Mapped[str] = mapped_column(String(100), index=True)
     bucket_id: Mapped[int] = mapped_column(ForeignKey("buckets.id"), index=True)
     filename: Mapped[str] = mapped_column(String(255))
-    path: Mapped[str] = mapped_column(String(500), unique=True)
+    path: Mapped[str | None] = mapped_column(String(500), unique=True, nullable=True)
     size: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="uploading", index=True)
+    volume_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -63,6 +66,7 @@ class StoredFile(Base):
         return (
             "StoredFile("
             f"id={self.id}, user_id={self.user_id}, bucket_id={self.bucket_id}, filename={self.filename}, "
-            f"path={self.path}, size={self.size}, is_deleted={self.is_deleted}, created_at={self.created_at}"
+            f"path={self.path}, size={self.size}, status={self.status}, volume_id={self.volume_id}, "
+            f"offset={self.offset}, is_deleted={self.is_deleted}, created_at={self.created_at}"
             ")"
         )

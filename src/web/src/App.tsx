@@ -19,6 +19,9 @@ type StoredFile = {
   bucket_id: number
   filename: string
   size: number
+  status: string
+  volume_id: number | null
+  offset: number | null
   is_deleted: boolean
   created_at: string
 }
@@ -272,7 +275,7 @@ function App() {
       const resolvedBucketId = await loadBuckets(activeUserId, activeBucketId)
       await refreshActiveBucketData(resolvedBucketId)
       setSuccessMessage(
-        `Soubor ${selectedFile.name} byl nahrany${activeBucket ? ` do bucketu ${activeBucket.name}` : ' do vychoziho bucketu'}.`,
+        `Soubor ${selectedFile.name} byl prijat ke zpracovani${activeBucket ? ` v bucketu ${activeBucket.name}` : ' ve vychozim bucketu'}. Stav se zmeni na ready po ACK z Haystacku.`,
       )
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Upload selhal.')
@@ -678,8 +681,18 @@ function App() {
                             </div>
                           </td>
                           <td>
-                            <span className={`status-pill${file.is_deleted ? ' deleted' : ' active'}`}>
-                              {file.is_deleted ? 'Soft deleted' : 'Ready'}
+                            <span
+                              className={`status-pill${
+                                file.is_deleted
+                                  ? ' deleted'
+                                  : file.status === 'ready'
+                                    ? ' active'
+                                    : file.status === 'failed'
+                                      ? ' deleted'
+                                      : ' neutral'
+                              }`}
+                            >
+                              {file.is_deleted ? 'Soft deleted' : file.status}
                             </span>
                           </td>
                           <td>{formatBytes(file.size)}</td>
@@ -690,7 +703,7 @@ function App() {
                                 type="button"
                                 className="secondary-button"
                                 onClick={() => void handleDownload(file)}
-                                disabled={isBusy || file.is_deleted}
+                                disabled={isBusy || file.is_deleted || file.status !== 'ready'}
                               >
                                 Download
                               </button>

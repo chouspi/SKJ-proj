@@ -112,6 +112,9 @@ class FileSummary(BaseModel):
     bucket_id: int = Field(..., ge=1)
     filename: str = Field(..., min_length=1, max_length=255)
     size: int = Field(..., ge=0)
+    status: str
+    volume_id: int | None = Field(None, ge=1)
+    offset: int | None = Field(None, ge=0)
     is_deleted: bool
     created_at: datetime
 
