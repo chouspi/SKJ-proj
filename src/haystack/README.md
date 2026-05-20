@@ -60,3 +60,19 @@ GET /volume/{volume_id}/{offset}/{size}
 ```
 
 Endpoint vraci presne `size` bajtu od daneho `offset` z vybraneho `volume_<id>.dat`.
+
+## Compaction
+
+Admin skript pro defragmentaci konkretniho volume:
+
+```bash
+python -m src.haystack.compact 1 --gateway-url http://127.0.0.1:8000
+```
+
+Postup:
+
+1. skript se ze S3 Gateway zepta na zive objekty ve volume pres `/internal/volumes/{volume_id}/objects`
+2. vytvori `volume_<id>_compacted.dat`
+3. prepise zive objekty tesne za sebe
+4. posle Gateway nove offsety pres `/internal/objects/{object_id}/location`
+5. nahradi stary `volume_<id>.dat` kompaktnim souborem

@@ -136,6 +136,15 @@ Podporované operace workeru:
 
 Výsledek se nahraje zpět přes Gateway jako nový objekt a worker publikuje stav do `image.done`.
 
+## Compaction API pro Haystack
+
+Interni endpointy pro administrační skript `src.haystack.compact`:
+
+- `GET /internal/volumes/{volume_id}/objects`
+- `PATCH /internal/objects/{object_id}/location`
+
+Tyto endpointy nejsou určeny pro běžného klienta. Slouží jen pro přepsání živých objektů při kompakci volume souborů.
+
 ## Testování přes Swagger UI
 
 Otevři:

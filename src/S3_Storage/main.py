@@ -23,6 +23,9 @@ try:
         BucketCreateRequest,
         BucketPathInput,
         BucketSummary,
+        CompactionLocationResponse,
+        CompactionLocationUpdate,
+        CompactionObject,
         DeleteFileResponse,
         ErrorResponse,
         FileListQuery,
@@ -48,6 +51,9 @@ except ImportError:
         BucketCreateRequest,
         BucketPathInput,
         BucketSummary,
+        CompactionLocationResponse,
+        CompactionLocationUpdate,
+        CompactionObject,
         DeleteFileResponse,
         ErrorResponse,
         FileListQuery,
@@ -452,6 +458,66 @@ async def process_object(
         object_id=file_input.file_id,
         bucket_id=bucket.id,
         operation=payload.operation,
+    )
+
+
+@app.get(
+    "/internal/volumes/{volume_id}/objects",
+    response_model=list[CompactionObject],
+    summary="List live objects for volume compaction",
+)
+async def list_live_volume_objects(
+    volume_id: int,
+    db: Session = Depends(get_db),
+) -> list[CompactionObject]:
+    if volume_id < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Volume ID must be >= 1.")
+
+    statement = (
+        select(models.StoredFile)
+        .where(models.StoredFile.volume_id == volume_id)
+        .where(models.StoredFile.status == "ready")
+        .where(models.StoredFile.is_deleted.is_(False))
+        .where(models.StoredFile.offset.is_not(None))
+        .order_by(models.StoredFile.offset.asc())
+    )
+    stored_files = db.scalars(statement).all()
+    return [
+        CompactionObject(
+            object_id=item.id,
+            volume_id=item.volume_id or volume_id,
+            offset=item.offset or 0,
+            size=item.size,
+        )
+        for item in stored_files
+    ]
+
+
+@app.patch(
+    "/internal/objects/{file_id}/location",
+    response_model=CompactionLocationResponse,
+    summary="Update object Haystack location after compaction",
+)
+async def update_object_location(
+    payload: CompactionLocationUpdate,
+    path_input: FilePathInput = Depends(get_file_path_input),
+    db: Session = Depends(get_db),
+) -> CompactionLocationResponse:
+    stored_file = db.get(models.StoredFile, str(path_input.file_id))
+    if stored_file is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+
+    stored_file.volume_id = payload.volume_id
+    stored_file.offset = payload.offset
+    stored_file.size = payload.size
+    stored_file.status = "ready"
+    db.commit()
+
+    return CompactionLocationResponse(
+        object_id=path_input.file_id,
+        volume_id=payload.volume_id,
+        offset=payload.offset,
+        size=payload.size,
     )
 
 

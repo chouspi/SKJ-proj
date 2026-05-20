@@ -137,6 +137,23 @@ class ImageProcessResponse(BaseModel):
     operation: str
 
 
+class CompactionObject(BaseModel):
+    object_id: UUID
+    volume_id: int = Field(..., ge=1)
+    offset: int = Field(..., ge=0)
+    size: int = Field(..., ge=0)
+
+
+class CompactionLocationUpdate(BaseModel):
+    volume_id: int = Field(..., ge=1)
+    offset: int = Field(..., ge=0)
+    size: int = Field(..., ge=0)
+
+
+class CompactionLocationResponse(CompactionObject):
+    pass
+
+
 class DeleteFileResponse(BaseModel):
     id: UUID
     message: str = Field(..., description="Deletion result.")

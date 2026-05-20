@@ -52,6 +52,7 @@ Tento soubor shrnuje důležité informace pro další implementaci projektu. Je
   - rotovat volume po překročení limitu velikosti
   - publikovat ACK do `storage.ack`
   - vracet raw data přes `GET /volume/{volume_id}/{offset}/{size}`
+  - spustit compaction přes `python -m src.haystack.compact <volume_id>`
 - `src/imgprocessing` už umí:
   - poslouchat broker topic `image.jobs`
   - stáhnout původní objekt přes S3 Gateway
@@ -260,14 +261,13 @@ Compaction logika nemá měnit obsah payloadů, jen jejich fyzické umístění.
 
 ## Co zatím v repozitáři není
 
-- compaction skript nebo chráněný Haystack endpoint
+- chráněná autentizace interních compaction endpointů; endpointy existují, ale zatím jsou interní pouze konvencí URL `/internal/...`
 
 ## Doporučený další postup implementace
 
-1. Přidat Image Processing Node, pokud je potřeba pro projektovou část 1.
-2. Přidat compaction skript nebo chráněný endpoint v Haystack Node.
-3. Volitelně doladit frontend polling pro `uploading -> ready` stavy.
-4. Dopsat integrační dokumentaci pro spuštění všech služeb.
+1. Volitelně přidat autentizaci pro `/internal/...` endpointy používané compaction skriptem.
+2. Volitelně doladit frontend polling pro `uploading -> ready` stavy.
+3. Dopsat integrační dokumentaci pro spuštění všech služeb.
 
 ## Důležité omezení pro další agenty
 
