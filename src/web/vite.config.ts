@@ -6,7 +6,15 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      '/buckets': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
       '/files': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/objects': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },

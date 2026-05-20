@@ -4,9 +4,11 @@ Tento soubor shrnuje důležité informace pro další implementaci projektu. Je
 
 ## Aktuální stav repozitáře
 
-- V repozitáři jsou teď dvě aplikace:
+- V repozitáři jsou teď čtyři aplikace:
   - `src/S3_Storage` - backendová FastAPI služba
   - `src/web` - React + Vite + TypeScript frontend pro lokální práci nad aktuálním backendem
+  - `src/messagebroker` - samostatný FastAPI WebSocket broker pro interní Pub/Sub komunikaci
+  - `src/haystack` - samostatný FastAPI storage node pro append-only volume soubory
 - Současná backendová aplikace je stále monolitická FastAPI služba, která:
   - přijímá upload přes `POST /files/upload`
   - ukládá binární data přímo na lokální disk do `src/S3_Storage/storage/<user_id>/<file_id>`
@@ -36,6 +38,12 @@ Tento soubor shrnuje důležité informace pro další implementaci projektu. Je
   - `is_deleted`
   - `created_at`
 - Současné řešení je stále monolitické a fyzicky ukládá soubory na disk. To je přesně část, která se má v další fázi změnit při přechodu na gateway + broker + haystack.
+- `src/haystack` už umí:
+  - background subscribe na `storage.write`
+  - append-only zapisovat payload do `volume_<n>.dat`
+  - rotovat volume po překročení limitu velikosti
+  - publikovat ACK do `storage.ack`
+  - vracet raw data přes `GET /volume/{volume_id}/{offset}/{size}`
 
 ## Cílová architektura
 
@@ -47,6 +55,12 @@ Projekt má být rozdělený na 4 nezávislé aplikace/služby:
 4. `Haystack Node`
 
 Aktuální `src/S3_Storage` je jen základ budoucí `S3 Gateway`, ne finální podoba systému.
+
+Budoucí samostatné aplikace mají mít vlastní adresáře pod `src/`.
+
+- `Message Broker` implementovat do `src/messagebroker`
+- `S3 Gateway` bude evoluce dnešního `src/S3_Storage`
+- další služby držet odděleně jako samostatné aplikace, ne přimíchávat je do `src/S3_Storage`
 
 Jde o 4 backendové služby, ne o 4 veřejné frontendové aplikace.
 
@@ -127,6 +141,14 @@ Poznámka: pokud bude potřeba zachovat kompatibilitu se stávajícím kódem, j
 
 Zadání předpokládá pub/sub komunikaci a MessagePack serializaci.
 
+Implementační umístění:
+
+- broker má být samostatná FastAPI aplikace v `src/messagebroker`
+- veřejné rozhraní brokeru má být interní WebSocket endpoint `/broker`
+- broker neimplementovat jako součást `src/S3_Storage`
+- aktuální implementace brokeru je záměrně jednoduchá in-memory Pub/Sub vrstva bez vlastní DB persistence
+- pokud nebude explicitně vyžadované starší cvičení s durable queues, nevrstvit do brokeru vlastní SQLite/Alembic řešení
+
 Minimální témata:
 
 - `storage.write`
@@ -163,6 +185,12 @@ Haystack Node je nová FastAPI aplikace, která:
 - rotuje na nový volume po překročení nakonfigurovaného limitu
 - po zápisu publikuje ACK na `storage.ack`
 - poskytuje čtecí endpoint `GET /volume/{volume_id}/{offset}/{size}`
+
+Implementační umístění:
+
+- haystack node je samostatná FastAPI aplikace v `src/haystack`
+- volume soubory se ukládají do `src/haystack/data/volumes/`
+- broker URL a limit velikosti volume se nastavují přes environment variables
 
 Praktické invarianty:
 
@@ -222,9 +250,7 @@ Compaction logika nemá měnit obsah payloadů, jen jejich fyzické umístění.
 
 ## Co zatím v repozitáři není
 
-- samostatná implementace brokeru
 - samostatná implementace image workeru
-- samostatná implementace haystack node
 - integrační vrstva mezi gateway a haystack přes broker
 - metadata pole `status`, `volume_id`, `offset` pro async haystack workflow
 

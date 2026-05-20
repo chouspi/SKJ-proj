@@ -1,0 +1,1 @@
+"""Haystack storage node package."""
