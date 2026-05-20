@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 STORAGE_DIR = BASE_DIR / "storage"
 METADATA_FILE = DATA_DIR / "files_metadata.json"

@@ -3,4 +3,5 @@ __pycache__/
 .venv/
 storage/
 data/
-
+src/S3_Storage/storage/
+src/S3_Storage/data/
