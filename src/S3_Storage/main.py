@@ -9,7 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 import aiofiles
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -74,8 +74,17 @@ async def save_metadata_unlocked(payload: dict[str, dict[str, Any]]) -> None:
         await handle.write(json.dumps(payload, indent=2))
 
 
-async def get_current_user_id(x_user_id: str = Header(..., alias="X-User-Id")) -> str:
-    sanitized = sanitize_user_id(x_user_id)
+async def get_current_user_id(
+    x_user_id: str | None = Header(None, alias="X-User-Id"),
+    user_id: str | None = Query(None),
+) -> str:
+    resolved_user_id = x_user_id if x_user_id is not None else user_id
+    if resolved_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing user identifier. Provide X-User-Id header or user_id query parameter.",
+        )
+    sanitized = sanitize_user_id(resolved_user_id)
     return sanitized
 
 

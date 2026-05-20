@@ -11,9 +11,16 @@ FastAPI backend pro jednoduchou object storage službu je teď umístěný celý
 
 ## Identifikace uživatele
 
-Uživatel se předává v HTTP hlavičce:
+Uživatele můžeš předat dvěma způsoby:
 
 - `X-User-Id: alice`
+- `?user_id=alice`
+
+Pro otevření v browseru je pohodlnější query parametr, například:
+
+```text
+http://127.0.0.1:8000/files?user_id=alice
+```
 
 ## Uložení na disk
 
@@ -39,10 +46,16 @@ pip install -r src/S3_Storage/requirements.txt
 ## Spuštění
 
 ```bash
+# z kořene repozitáře
 uvicorn src.S3_Storage.main:app --reload
+
+# nebo přímo z adresáře src/S3_Storage
+uvicorn main:app --reload
 ```
 
 Server potom běží standardně na `http://127.0.0.1:8000`.
+
+Poznámka: endpointy `/files*` vyžadují identifikaci uživatele přes `X-User-Id` nebo `user_id`. Pokud nepošleš ani jedno, API vrátí `400`.
 
 ## Testování pomocí curl
 
@@ -57,7 +70,7 @@ curl -X POST "http://127.0.0.1:8000/files/upload" ^
 Seznam souborů:
 
 ```bash
-curl "http://127.0.0.1:8000/files" -H "X-User-Id: alice"
+curl "http://127.0.0.1:8000/files?user_id=alice"
 ```
 
 Stažení:
