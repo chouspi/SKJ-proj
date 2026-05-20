@@ -76,6 +76,21 @@ function Start-Service($name, $cmd, $argsList, $workDir) {
   $Script:Processes += $proc
 }
 
+function Wait-Port($port, $timeout = 25) {
+  $waited = 0
+  while ($waited -lt $timeout) {
+    try {
+      $request = [System.Net.WebRequest]::Create("http://127.0.0.1:$port/")
+      $request.GetResponse().Close()
+      return
+    } catch {
+      Start-Sleep -Seconds 1
+      $waited++
+    }
+  }
+  Log "Timeout cekani na port $port, pokracuji..."
+}
+
 function Cleanup {
   Log "Ukoncuji vsechny sluzby..."
   foreach ($p in $Script:Processes) {
@@ -90,8 +105,14 @@ Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { Cleanup } | 
 Push-Location $RootDir
 
 Start-Service "Message Broker" "uvicorn" @("src.messagebroker.main:app", "--reload", "--host", "127.0.0.1", "--port", "8001") $RootDir
+Wait-Port 8001
+
 Start-Service "Haystack Node" "uvicorn" @("src.haystack.main:app", "--reload", "--host", "127.0.0.1", "--port", "8002") $RootDir
+Wait-Port 8002
+
 Start-Service "Backend (S3 Gateway)" "uvicorn" @("src.S3_Storage.main:app", "--reload", "--host", "127.0.0.1", "--port", "8000") $RootDir
+Wait-Port 8000
+
 Start-Service "Image Worker" "python" @("-m", "src.imgprocessing.worker") $RootDir
 Start-Service "Frontend" "npm" @("run", "dev", "--", "--host", "127.0.0.1", "--port", "5173", "--strictPort") $FrontendDir
 

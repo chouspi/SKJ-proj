@@ -8,10 +8,12 @@ VENV_DIR="$ROOT_DIR/.venv"
 
 # ---------- dependency check ----------
 
-if ! command -v python3 >/dev/null 2>&1; then
-  printf 'Missing python3. Install Python 3.10+ first.\n' >&2
+if ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; then
+  printf 'Missing python. Install Python 3.10+ first.\n' >&2
   exit 1
 fi
+
+PYTHON=$(command -v python3 || command -v python)
 
 if ! command -v npm >/dev/null 2>&1; then
   printf 'Missing npm. Install Node.js and npm first.\n' >&2
@@ -22,7 +24,7 @@ fi
 
 if [ ! -f "$VENV_DIR/bin/activate" ]; then
   printf 'Creating Python virtual environment...\n'
-  python3 -m venv "$VENV_DIR"
+  $PYTHON -m venv "$VENV_DIR"
 fi
 
 source "$VENV_DIR/bin/activate"
@@ -64,6 +66,21 @@ printf 'Applying database migrations\n'
 cd "$ROOT_DIR"
 alembic upgrade head
 
+# ---------- helper: wait for port ----------
+
+wait_for_port() {
+  local host="$1" port="$2" timeout="${3:-20}"
+  local waited=0
+  while [ $waited -lt $timeout ]; do
+    if python -c "import urllib.request; urllib.request.urlopen('http://$host:$port/')" 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  printf '  timeout, continuing...\n'
+}
+
 # ---------- start services ----------
 
 cleanup() {
@@ -82,6 +99,8 @@ printf 'Starting message broker on http://127.0.0.1:8001\n'
   uvicorn src.messagebroker.main:app --reload --host 127.0.0.1 --port 8001
 ) &
 BROKER_PID=$!
+printf '  cekam na broker...\n'
+wait_for_port 127.0.0.1 8001
 
 printf 'Starting Haystack node on http://127.0.0.1:8002\n'
 (
@@ -89,6 +108,8 @@ printf 'Starting Haystack node on http://127.0.0.1:8002\n'
   uvicorn src.haystack.main:app --reload --host 127.0.0.1 --port 8002
 ) &
 HAYSTACK_PID=$!
+printf '  cekam na haystack...\n'
+wait_for_port 127.0.0.1 8002
 
 printf 'Starting backend on http://127.0.0.1:8000\n'
 (
@@ -96,6 +117,8 @@ printf 'Starting backend on http://127.0.0.1:8000\n'
   uvicorn src.S3_Storage.main:app --reload --host 127.0.0.1 --port 8000
 ) &
 BACKEND_PID=$!
+printf '  cekam na backend...\n'
+wait_for_port 127.0.0.1 8000
 
 printf 'Starting image worker\n'
 (
