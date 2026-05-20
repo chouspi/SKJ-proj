@@ -4,18 +4,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="$ROOT_DIR/src/web"
+VENV_DIR="$ROOT_DIR/.venv"
 
-if [ -f "$ROOT_DIR/.venv/bin/activate" ]; then
-  source "$ROOT_DIR/.venv/bin/activate"
-fi
+# ---------- dependency check ----------
 
-if ! command -v uvicorn >/dev/null 2>&1; then
-  printf 'Missing uvicorn. Activate/install backend dependencies first.\n' >&2
-  exit 1
-fi
-
-if ! command -v alembic >/dev/null 2>&1; then
-  printf 'Missing alembic. Install backend dependencies first.\n' >&2
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'Missing python3. Install Python 3.10+ first.\n' >&2
   exit 1
 fi
 
@@ -24,10 +18,53 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
+# ---------- Python virtual environment ----------
+
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+  printf 'Creating Python virtual environment...\n'
+  python3 -m venv "$VENV_DIR"
+fi
+
+source "$VENV_DIR/bin/activate"
+
+# ---------- install Python dependencies ----------
+
+PYTHON_DEPS_MISSING=0
+for req in "$ROOT_DIR/src/S3_Storage/requirements.txt" \
+           "$ROOT_DIR/src/messagebroker/requirements.txt" \
+           "$ROOT_DIR/src/haystack/requirements.txt" \
+           "$ROOT_DIR/src/imgprocessing/requirements.txt"; do
+  if [ -f "$req" ]; then
+    pip install --quiet -r "$req" 2>/dev/null || PYTHON_DEPS_MISSING=1
+  fi
+done
+
+if [ "$PYTHON_DEPS_MISSING" -ne 0 ]; then
+  printf 'Installing Python dependencies...\n'
+  for req in "$ROOT_DIR/src/S3_Storage/requirements.txt" \
+             "$ROOT_DIR/src/messagebroker/requirements.txt" \
+             "$ROOT_DIR/src/haystack/requirements.txt" \
+             "$ROOT_DIR/src/imgprocessing/requirements.txt"; do
+    if [ -f "$req" ]; then
+      pip install -r "$req"
+    fi
+  done
+fi
+
+# ---------- install frontend dependencies ----------
+
 if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
   printf 'Installing frontend dependencies...\n'
   npm install --prefix "$FRONTEND_DIR"
 fi
+
+# ---------- database migrations ----------
+
+printf 'Applying database migrations\n'
+cd "$ROOT_DIR"
+alembic upgrade head
+
+# ---------- start services ----------
 
 cleanup() {
   for pid in "${BROKER_PID:-}" "${HAYSTACK_PID:-}" "${IMG_WORKER_PID:-}" "${BACKEND_PID:-}" "${FRONTEND_PID:-}"; do
@@ -38,10 +75,6 @@ cleanup() {
 }
 
 trap cleanup EXIT INT TERM
-
-printf 'Applying database migrations\n'
-cd "$ROOT_DIR"
-alembic upgrade head
 
 printf 'Starting message broker on http://127.0.0.1:8001\n'
 (

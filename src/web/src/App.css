@@ -1017,6 +1017,43 @@ tbody tr:last-child td {
   font-weight: 600;
 }
 
+.usage-bar-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.usage-bar-wrapper span {
+  font-size: 0.85rem;
+  white-space: nowrap;
+  min-width: 3.5rem;
+  text-align: right;
+}
+
+.usage-bar {
+  flex: 1;
+  min-width: 6rem;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #22c55e, #34d399);
+  transition: width 0.3s ease;
+}
+
+.usage-bar-warn {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.usage-bar-danger {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
 .upload-polling {
   font-size: 0.85rem;
   color: var(--muted);

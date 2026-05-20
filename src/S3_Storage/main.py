@@ -387,6 +387,78 @@ async def system_stats(db: Session = Depends(get_db)) -> SystemDashboardResponse
     )
 
 
+@app.get("/system/volumes")
+async def system_volumes(db: Session = Depends(get_db)) -> dict:
+    haystack_url = f"{settings.haystack_base_url.rstrip('/')}/volumes"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(haystack_url, timeout=5)
+            resp.raise_for_status()
+            haystack_data = resp.json()
+    except Exception:
+        haystack_data = {"max_volume_size_bytes": 0, "volumes": []}
+
+    max_size = haystack_data.get("max_volume_size_bytes", 0)
+    volume_file_sizes = {v["id"]: v["file_size_bytes"] for v in haystack_data.get("volumes", [])}
+
+    volume_ids = [
+        row[0]
+        for row in db.execute(
+            select(models.StoredFile.volume_id)
+            .where(models.StoredFile.volume_id.is_not(None))
+            .distinct()
+            .order_by(models.StoredFile.volume_id)
+        ).all()
+    ]
+
+    results = []
+    for vid in volume_ids:
+        total_q = db.execute(
+            select(func.count(models.StoredFile.id))
+            .where(models.StoredFile.volume_id == vid)
+        )
+        total_objects = total_q.scalar() or 0
+
+        active_q = db.execute(
+            select(func.count(models.StoredFile.id))
+            .where(models.StoredFile.volume_id == vid)
+            .where(models.StoredFile.is_deleted.is_(False))
+        )
+        active_objects = active_q.scalar() or 0
+
+        deleted_q = db.execute(
+            select(func.count(models.StoredFile.id))
+            .where(models.StoredFile.volume_id == vid)
+            .where(models.StoredFile.is_deleted.is_(True))
+        )
+        deleted_objects = deleted_q.scalar() or 0
+
+        size_q = db.execute(
+            select(func.coalesce(func.sum(models.StoredFile.size), 0))
+            .where(models.StoredFile.volume_id == vid)
+        )
+        total_data_bytes = size_q.scalar() or 0
+
+        file_size = volume_file_sizes.get(vid, 0)
+        usage_pct = round((file_size / max_size * 100) if max_size > 0 else 0, 1)
+        fragmentation = round((1 - total_data_bytes / file_size) * 100, 1) if file_size > 0 else 0.0
+
+        results.append({
+            "volume_id": vid,
+            "name": f"volume_{vid}.dat",
+            "file_size_bytes": file_size,
+            "max_size_bytes": max_size,
+            "usage_pct": usage_pct,
+            "total_objects": total_objects,
+            "active_objects": active_objects,
+            "deleted_objects": deleted_objects,
+            "fragmentation_pct": fragmentation,
+        })
+
+    return {"volumes": results}
+
+
 @app.post(
     "/buckets/",
     response_model=BucketSummary,

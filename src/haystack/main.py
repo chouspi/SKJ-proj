@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -38,6 +39,21 @@ async def health() -> dict[str, str | int]:
     return {
         "message": "Haystack storage node is running.",
         "current_volume_id": volume_manager.current_volume_id,
+    }
+
+
+@app.get("/volumes")
+async def list_volumes() -> dict:
+    volumes_dir = settings.volumes_dir
+    volumes_dir.mkdir(parents=True, exist_ok=True)
+    volumes = []
+    for path in sorted(volumes_dir.glob("volume_*.dat"), key=lambda p: int(p.stem.split("_")[1])):
+        volume_id = int(path.stem.split("_")[1])
+        file_size = path.stat().st_size
+        volumes.append({"id": volume_id, "file_size_bytes": file_size})
+    return {
+        "max_volume_size_bytes": settings.max_volume_size_bytes,
+        "volumes": volumes,
     }
 
 
